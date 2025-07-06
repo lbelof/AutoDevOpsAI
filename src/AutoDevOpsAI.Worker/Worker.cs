@@ -10,6 +10,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoDevOpsAI.DevOps;
+using AutoDevOpsAI.Core;
+using HtmlAgilityPack;
 
 namespace AutoDevOpsAI.Worker
 {
@@ -21,20 +23,23 @@ namespace AutoDevOpsAI.Worker
         private string OrganizationUrl => _config["AzureDevOps:OrganizationUrl"];
         private string ProjectName => _config["AzureDevOps:ProjectName"];
         private string PatToken => _config["AzureDevOps:PatToken"]; 
+        private readonly IAgentService _agentService;
 
-        public Worker(ILogger<Worker> logger, IConfiguration config)
+        public Worker(ILogger<Worker> logger, IConfiguration config, IAgentService agentService)
         {
+            
             _logger = logger;
             _config = config;
-
+            _agentService = agentService;
     
 
             _devOpsClient = new DevOpsClient(OrganizationUrl, ProjectName, PatToken);
+            _logger.LogInformation("Worker construtor chamado");
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-           
+            _logger.LogInformation("Worker iniciado");
 
             var credentials = new VssBasicCredential(string.Empty, PatToken);
             var connection = new VssConnection(new Uri(OrganizationUrl), credentials);
@@ -42,26 +47,127 @@ namespace AutoDevOpsAI.Worker
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("Verificando cards com tag 'autocode'...");
-
+                _logger.LogInformation($"Buscando histórias de usuário ");
                 var historias = await _devOpsClient.GetUserStoriesWithTagAsync("autocode");
 
-                if (historias.Any())
+                foreach (var historia in historias)
                 {
-                    foreach (var item in historias)
+                    var titulo = historia.Fields["System.Title"].ToString();
+                    var htmlDescricao = historia.Fields["System.Description"]?.ToString() ?? titulo;
+                    var descricao = ExtrairTextoLimpo(htmlDescricao);
+
+                    _logger.LogInformation($"Processando história #{historia.Id}: {titulo}");
+                    
+                    var repoName = ExtrairRepoHtml(htmlDescricao);
+     
+                    if (string.IsNullOrWhiteSpace(repoName))
                     {
-                        var id = item.Id;
-                        var titulo = item.Fields["System.Title"];
-                        _logger.LogInformation($"# {id} - {titulo}");
+                        _logger.LogWarning("História #{id} ignorada: repositório não informado no corpo da descrição.", historia.Id);
+                        continue;
                     }
-                }
-                else
-                {
-                    _logger.LogInformation("Nenhuma história encontrada com a tag 'autocode'.");
+
+        
+                    var branchName = $"autocode/{historia.Id}";
+
+                    // 1. Obter estrutura do repositório
+                    var estruturaArquivos = await _devOpsClient.ListAllFilesAsync(repoName, "main");
+
+                    // 2. Pedir sugestão de alterações à IA
+                    var arquivosGerados = await _agentService.ProporAlteracoesAsync(descricao, estruturaArquivos);
+
+                    if (!arquivosGerados.Any())
+                    {
+                        _logger.LogWarning("IA não retornou alterações para a história #{id}", historia.Id);
+                        continue;
+                    }
+
+                    // 3. Criar nova branch
+                    await _devOpsClient.CreateBranchAsync(repoName, "main", branchName);
+
+                    // 4. Comitar todos os arquivos sugeridos
+                    foreach (var arquivo in arquivosGerados)
+                    {
+                        _logger.LogInformation("Comitando: {arquivo}", arquivo.FilePath);
+
+                        await _devOpsClient.CommitFileAsync(
+                            repoName: repoName,
+                            branchName: branchName,
+                            filePath: arquivo.FilePath,
+                            newContent: arquivo.Content,
+                            commitMessage: $"feat: ajuste automático para história #{historia.Id} - {arquivo.FilePath}"
+                        );
+                    }
+
+                    // 5. Criar Pull Request
+                    var pr = await _devOpsClient.CreatePullRequestAsync(
+                        repoName: repoName,
+                        sourceBranch: branchName,
+                        targetBranch: "main",
+                        title: $"AutoCode: #{historia.Id} - {titulo}",
+                        description: descricao
+                    );
+
+                    await _devOpsClient.AtualizarHistoriaComoProcessada(historia.Id ??0, pr.Url);
+
+
+                    _logger.LogInformation("História #{id} concluída com sucesso.", historia.Id);
                 }
 
-                await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
+                // _logger.LogInformation("Verificando cards com tag 'autocode'...");
+
+                // var historias = await _devOpsClient.GetUserStoriesWithTagAsync("autocode");
+
+                // if (historias.Any())
+                // {
+                //     foreach (var item in historias)
+                //     {
+                //         var id = item.Id;
+                //         var titulo = item.Fields["System.Title"];
+                //         _logger.LogInformation($"# {id} - {titulo}");
+                //     }
+                // }
+                // else
+                // {
+                //     _logger.LogInformation("Nenhuma história encontrada com a tag 'autocode'.");
+                // }
+
+                 await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
             }
+
+
         }
+        private static string? ExtrairValorTag(string texto, string tag)
+        {
+            var linha = texto.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith(tag, StringComparison.OrdinalIgnoreCase));
+            return linha?.Split(':', 2).ElementAtOrDefault(1)?.Trim();
+        }
+
+        private static string? ExtrairRepoHtml(string html)
+        {
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            foreach (var div in doc.DocumentNode.SelectNodes("//div"))
+            {
+                var texto = HtmlEntity.DeEntitize(div.InnerText.Trim());
+                Console.WriteLine("Div: >>>" + texto + "<<<"); // debug opcional
+
+                if (texto.StartsWith("@repo:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var valor = texto.Substring(6).Trim();
+                    return string.IsNullOrWhiteSpace(valor) ? null : valor;
+                }
+            }
+
+            return null;
+        }
+
+        private static string ExtrairTextoLimpo(string html)
+        {
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+            return HtmlEntity.DeEntitize(doc.DocumentNode.InnerText.Replace("\r", "").Replace("\n", ""));
+        }
+
     }
 }

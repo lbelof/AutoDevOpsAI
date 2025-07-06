@@ -8,11 +8,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="HtmlAgilityPack" Version="1.12.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.6" />
     <PackageReference Include="Microsoft.TeamFoundationServer.ExtendedClient" Version="19.225.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AutoDevOpsAI.DevOps\AutoDevOpsAI.DevOps.csproj" />
+    <ProjectReference Include="..\AutoDevOpsAI.Core\AutoDevOpsAI.Core.csproj" />
+    <ProjectReference Include="..\AutoDevOpsAI.Agent\AutoDevOpsAI.Agent.csproj" />
   </ItemGroup>
 </Project>
