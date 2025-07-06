@@ -1,0 +1,32 @@
+## Build artifacts
+bin/
+obj/
+out/
+
+## User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## VS Code
+.vscode/
+
+## Rider
+.idea/
+*.sln.iml
+
+## ASP.NET Secrets
+secrets.json
+
+## App settings locais (NÃO subir PAT ou configs sensíveis)
+src/**/appsettings.Development.json
+src/**/appsettings.Local.json
+src/**/appsettings.*.json
+
+## Logs e cache
+*.log
+*.tlog
+*.vspscc
+*.vssscc
+TestRes
