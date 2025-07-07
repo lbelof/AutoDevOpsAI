@@ -22,36 +22,13 @@ namespace AutoDevOpsAI.Agent
 
         public async Task<List<FileChange>> ProporAlteracoesAsync(string historiaUsuario, List<string> estruturaArquivos)
         {
-            var estrutura = string.Join("\n", estruturaArquivos);
+            var projetoExiste = estruturaArquivos.Any(x =>
+                x.EndsWith(".sln") || x.EndsWith(".csproj") || x.EndsWith("Program.cs")
+            );
 
-            var prompt = $@"
-Você está atuando como um engenheiro de software .NET. Abaixo está a estrutura atual do repositório:
-
-{estrutura}
-
-
-Com base nessa estrutura e na história de usuário a seguir, siga as instruções abaixo:
-
-- Caso o projeto já esteja estruturado com arquivos `.sln`, `.csproj`, `Program.cs`, `Startup.cs`, `Dockerfile`, testes e pastas organizadas, **não os modifique**.
-- Preserve todos os arquivos existentes, e **evite reescrever ou sobrescrever funcionalidades que não estejam diretamente relacionadas à história**.
-- Altere ou crie apenas os arquivos estritamente necessários para implementar a história de usuário abaixo.
-- Caso alguma parte essencial esteja ausente para que o sistema funcione (ex: `Program.cs`, `Startup.cs`, `Dockerfile`, `test project`), **crie somente o que for indispensável**.
-- Se o projeto ainda não existir, ou estiver completamente vazio, siga as boas práticas de estruturação de um projeto moderno em .NET Core (última versão LTS(faça uma pesquisa para saber qual é)), com separação de responsabilidades, testes e Docker.
-- Sempre que possível, **reutilize os arquivos e pastas já presentes** no projeto.
-- Garanta que o código final gere um build bem-sucedido.
-- Todo o código deve seguir a indentação e estilo padrão da linguagem C#, conforme as convenções da Microsoft (4 espaços por nível de indentação, nomes em PascalCase/CamelCase, uso de chaves em blocos, etc).
-- Implemente testes unitários apenas para os novos comportamentos adicionados.
-- Retorne a resposta no seguinte formato JSON:
-
-
-[
-  {{ ""filePath"": ""/caminho/do/arquivo.cs"", ""content"": ""código aqui..."" }},
-  ...
-]
-
-História de usuário:
-""{historiaUsuario}""
-";
+            var prompt = projetoExiste
+                ? PromptFuncionalidade(historiaUsuario, estruturaArquivos)
+                : PromptCriarEstruturaBase(historiaUsuario);
 
             var requestBody = new
             {
@@ -75,12 +52,12 @@ História de usuário:
             var responseString = await response.Content.ReadAsStringAsync();
 
             using var doc = JsonDocument.Parse(responseString);
-           
-           var contentRaw = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
+
+            var contentRaw = doc.RootElement
+                 .GetProperty("choices")[0]
+                 .GetProperty("message")
+                 .GetProperty("content")
+                 .GetString();
 
             // Remove marcações Markdown como ```json
             var cleanJson = contentRaw?
@@ -98,5 +75,72 @@ História de usuário:
                 PropertyNameCaseInsensitive = true
             }) ?? new List<FileChange>();
         }
+
+        private string PromptCriarEstruturaBase(string historiaUsuario)
+        {
+            return $@"
+                O repositório está vazio ou não possui projeto configurado.
+
+                Crie toda a estrutura mínima necessária para iniciar um projeto moderno em .NET (última versão LTS(connsultar a web para saber qual é a versão)), seguindo boas práticas de arquitetura, incluindo:
+
+                - Solução (.sln)
+                - Projeto principal (.csproj)
+                - Arquivo Program.cs ou Startup.cs, conforme a versão
+                - Estrutura organizada com Controllers, Services, Models, Repositories
+                - Projeto separado para testes unitários
+                - Dockerfile funcional na raiz
+                - README.md explicando o projeto
+                - Ao fim desse prompt existe uma história de usuário. Entenda o contexto da historia e crie a estrutura base já pensando em antender a essa história.
+
+                Todos os nomes devem seguir a convenção de nomenclatura C# (PascalCase/CamelCase), e a indentação deve usar 4 espaços por nível.
+
+                Retorne os arquivos no seguinte formato JSON:
+
+                    [
+                    {{ ""filePath"": ""/caminho/do/arquivo.cs"", ""content"": ""código aqui..."" }},
+                    ...
+                    ]
+
+                Retorne apenas um array JSON de objetos com filePath e content, sem envolver em objetos adicionais como {{ files: [...] }} ou {{ response: [...] }} ou nenhum outro objeto.
+
+                História de usuário:
+                ""{historiaUsuario}""
+                ";
+        }
+
+        private string PromptFuncionalidade(string historiaUsuario, List<string> estrutura)
+        {
+            var estruturaTexto = string.Join("\n", estrutura);
+
+            return $@"
+                Você é um engenheiro de software .NET.
+
+                Abaixo está a estrutura atual do projeto:
+                {estruturaTexto}
+
+                Com base nessa estrutura e na história de usuário a seguir, implemente apenas o necessário para entregar a funcionalidade descrita.
+
+                Regras:
+                - **Não reescreva arquivos inteiros desnecessariamente**
+                - Modifique arquivos existentes apenas se for essencial para a funcionalidade
+                - Crie arquivos novos onde necessário, mantendo a organização atual
+                - Não crie estrutura de projeto (sln, csproj, Program.cs, Dockerfile, etc) se ela já existir
+                - Implemente testes unitários apenas para os novos comportamentos adicionados
+                - Use indentação padrão C# (4 espaços), nomes em PascalCase/CamelCase, boas práticas de formatação
+
+                Retorne os arquivos alterados/criados no seguinte formato JSON:
+                    [
+                    {{ ""filePath"": ""/caminho/do/arquivo.cs"", ""content"": ""código aqui..."" }},
+                    ...
+                    ]
+
+                Retorne apenas um array JSON de objetos com filePath e content, sem envolver em objetos adicionais como {{ files: [...] }} ou {{ response: [...] }} ou nenhum outro objeto.
+
+                História de usuário:
+                ""{historiaUsuario}""
+                ";
+        }
+
+
     }
 }

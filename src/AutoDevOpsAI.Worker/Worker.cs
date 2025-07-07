@@ -34,7 +34,7 @@ namespace AutoDevOpsAI.Worker
     
 
             _devOpsClient = new DevOpsClient(OrganizationUrl, ProjectName, PatToken);
-            _logger.LogInformation("Worker construtor chamado");
+            
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
