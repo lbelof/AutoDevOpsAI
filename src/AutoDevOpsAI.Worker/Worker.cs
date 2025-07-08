@@ -1,14 +1,6 @@
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
-using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using AutoDevOpsAI.DevOps;
 using AutoDevOpsAI.Core;
 using HtmlAgilityPack;
@@ -22,19 +14,25 @@ namespace AutoDevOpsAI.Worker
         private readonly DevOpsClient _devOpsClient;
         private string OrganizationUrl => _config["AzureDevOps:OrganizationUrl"];
         private string ProjectName => _config["AzureDevOps:ProjectName"];
-        private string PatToken => _config["AzureDevOps:PatToken"]; 
+        private string PatToken => _config["AzureDevOps:PatToken"];
         private readonly IAgentService _agentService;
 
-        public Worker(ILogger<Worker> logger, IConfiguration config, IAgentService agentService)
+        public Worker(
+            ILogger<Worker> logger,
+            IConfiguration config,
+            IAgentService agentService,
+            ILoggerFactory loggerFactory)
         {
-            
             _logger = logger;
             _config = config;
             _agentService = agentService;
-    
 
-            _devOpsClient = new DevOpsClient(OrganizationUrl, ProjectName, PatToken);
-            
+            _devOpsClient = new DevOpsClient(
+                OrganizationUrl,
+                ProjectName,
+                PatToken,
+                loggerFactory.CreateLogger<DevOpsClient>(),
+                agentService);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,20 +55,30 @@ namespace AutoDevOpsAI.Worker
                     var descricao = ExtrairTextoLimpo(htmlDescricao);
 
                     _logger.LogInformation($"Processando história #{historia.Id}: {titulo}");
-                    
+
                     var repoName = ExtrairRepoHtml(htmlDescricao);
-     
+
                     if (string.IsNullOrWhiteSpace(repoName))
                     {
                         _logger.LogWarning("História #{id} ignorada: repositório não informado no corpo da descrição.", historia.Id);
                         continue;
                     }
 
-        
-                    var branchName = $"autocode/{historia.Id}";
+                    var pipelineId = await _devOpsClient.ObterPipelineIdPorNomeAsync(repoName);
+
+                    if (pipelineId is null)
+                    {
+                        _logger.LogWarning($"Pipeline não encontrada para o repositório {repoName}.", repoName);
+                        continue;
+                    }
+
+                    var branchName = $"autocode/card-{historia.Id}";
+
+                    //verifica se a branch já existe
+                    var branchExists = await _devOpsClient.VerificarBranchExistenteAsync(repoName, branchName);
 
                     // 1. Obter estrutura do repositório
-                    var estruturaArquivos = await _devOpsClient.ListAllFilesAsync(repoName, "main");
+                    var estruturaArquivos = await _devOpsClient.ListAllFilesAsync(repoName, branchExists ? branchName : "main");
 
                     // 2. Pedir sugestão de alterações à IA
                     var arquivosGerados = await _agentService.ProporAlteracoesAsync(descricao, estruturaArquivos);
@@ -82,23 +90,31 @@ namespace AutoDevOpsAI.Worker
                     }
 
                     // 3. Criar nova branch
-                    await _devOpsClient.CreateBranchAsync(repoName, "main", branchName);
-
-                    // 4. Comitar todos os arquivos sugeridos
-                    foreach (var arquivo in arquivosGerados)
+                    if (!branchExists)
                     {
-                        _logger.LogInformation("Comitando: {arquivo}", arquivo.FilePath);
+                        _logger.LogInformation("Criando nova branch: {branchName}", branchName);
+                        await _devOpsClient.CreateBranchAsync(repoName, "main", branchName);
+                    }
+                    else
+                        _logger.LogInformation("Branch já existe: {branchName}", branchName);
 
-                        await _devOpsClient.CommitFileAsync(
-                            repoName: repoName,
-                            branchName: branchName,
-                            filePath: arquivo.FilePath,
-                            newContent: arquivo.Content,
-                            commitMessage: $"feat: ajuste automático para história #{historia.Id} - {arquivo.FilePath}"
-                        );
+
+                    // 5. Rodar build e validar antes do PR
+                    var buildOk = await _devOpsClient.ValidarBuildAntesDaPRAsync(
+                        repoName: repoName,
+                        branchName: branchName,
+                        historiaId: historia.Id ?? 0,
+                        arquivos: arquivosGerados,
+                        pipelineId: pipelineId.Value
+                    );
+
+                    if (!buildOk)
+                    {
+                        _logger.LogWarning("Build falhou para a história #{id}. PR não será criada.", historia.Id);
+                        continue;
                     }
 
-                    // 5. Criar Pull Request
+                    // 6. Criar Pull Request
                     var pr = await _devOpsClient.CreatePullRequestAsync(
                         repoName: repoName,
                         sourceBranch: branchName,
@@ -107,40 +123,19 @@ namespace AutoDevOpsAI.Worker
                         description: descricao
                     );
 
-                    await _devOpsClient.AtualizarHistoriaComoProcessada(historia.Id ??0, pr.Url);
-
+                    await _devOpsClient.AtualizarHistoriaComoProcessada(historia.Id ?? 0, pr.Url);
 
                     _logger.LogInformation("História #{id} concluída com sucesso.", historia.Id);
                 }
 
-                // _logger.LogInformation("Verificando cards com tag 'autocode'...");
 
-                // var historias = await _devOpsClient.GetUserStoriesWithTagAsync("autocode");
 
-                // if (historias.Any())
-                // {
-                //     foreach (var item in historias)
-                //     {
-                //         var id = item.Id;
-                //         var titulo = item.Fields["System.Title"];
-                //         _logger.LogInformation($"# {id} - {titulo}");
-                //     }
-                // }
-                // else
-                // {
-                //     _logger.LogInformation("Nenhuma história encontrada com a tag 'autocode'.");
-                // }
-
-                 await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(2), stoppingToken);
             }
 
 
         }
-        private static string? ExtrairValorTag(string texto, string tag)
-        {
-            var linha = texto.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith(tag, StringComparison.OrdinalIgnoreCase));
-            return linha?.Split(':', 2).ElementAtOrDefault(1)?.Trim();
-        }
+
 
         private static string? ExtrairRepoHtml(string html)
         {
