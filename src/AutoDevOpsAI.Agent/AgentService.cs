@@ -12,7 +12,7 @@ namespace AutoDevOpsAI.Agent
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private const string endpoint = "https://api.openai.com/v1/chat/completions";
-        private const string model = "gpt-4.1"; // ou gpt-3.5-turbo
+        private const string model = "gpt-4.1";
         private readonly ILogger<AgentService> _logger;
         public AgentService(HttpClient httpClient, IConfiguration config, ILogger<AgentService> logger)
         {
@@ -46,7 +46,7 @@ namespace AutoDevOpsAI.Agent
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-
+            _logger.LogInformation(">> PROGRAMANDO... <<");
             var response = await _httpClient.PostAsync(endpoint, content);
             response.EnsureSuccessStatusCode();
 
@@ -150,7 +150,7 @@ namespace AutoDevOpsAI.Agent
                 ";
         }
 
-       
+
 
         public async Task<List<FileChange>> CorrigirFalhaBuildAsync(int historiaId, List<FileChange> arquivosAnteriores, string errosBuild)
         {
@@ -193,7 +193,7 @@ namespace AutoDevOpsAI.Agent
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-
+            _logger.LogInformation(">> PROGRAMANDO... <<");
             var response = await _httpClient.PostAsync(endpoint, content);
             response.EnsureSuccessStatusCode();
 
@@ -224,7 +224,7 @@ namespace AutoDevOpsAI.Agent
                 errosBuild += $"\n\nFoi aplicada a solução conforme essa explicação: {explicacaoIA}, mas ainda assim não funcionou:\n";
                 var jsonData = contentRaw.Substring(startIndex, endIndex - startIndex).Trim();
 
-                _logger.LogWarning($"📄 Explicação da IA para falha de build:\n{explicacaoIA}");
+                _logger.LogInformation(">> Explicação da IA para falha de build: {explicacaoIA} <<", explicacaoIA);
 
                 try
                 {
@@ -243,7 +243,7 @@ namespace AutoDevOpsAI.Agent
             }
             else
             {
-                _logger.LogError("❌ Não foi possível identificar o JSON na resposta da IA:\n{resposta}", contentRaw);
+                _logger.LogError("Não foi possível identificar o JSON na resposta da IA:\n{resposta}", contentRaw);
                 return new List<FileChange>();
             }
 

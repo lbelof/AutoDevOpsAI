@@ -21,7 +21,7 @@ namespace AutoDevOpsAI.DevOps
         private readonly string _projectName;
         private readonly ILogger<DevOpsClient> _logger;
         private readonly IAgentService _agentService;
-        private const int MaxTentativasCorrecao = 3;
+        private const int MaxTentativasCorrecao = 5;
 
 
 
@@ -222,7 +222,7 @@ namespace AutoDevOpsAI.DevOps
             // 1. Comentário
             var comment = new CommentCreate
             {
-                Text = $"✅ Esta história foi processada pela AutoDevOpsAI. [Ver Pull Request]({prUrl})"
+                Text = $"Esta história foi processada pela AutoDevOpsAI. [Ver Pull Request]({prUrl})"
             };
 
             await _witClient.AddCommentAsync(comment, _projectName, idHistoria);
@@ -281,11 +281,11 @@ namespace AutoDevOpsAI.DevOps
 
             if (current.Result == BuildResult.Succeeded)
             {
-                _logger.LogInformation("✅ Build sucedida. PR será criada.");
+                _logger.LogInformation("Build sucedida. PR será criada.");
                 return true;
             }
 
-            _logger.LogWarning("❌ Build falhou. Recuperando informações...");
+            _logger.LogWarning("Build falhou. Recuperando informações...");
 
             var timeline = await buildClient.GetBuildTimelineAsync(_projectName, current.Id);
             if (timeline == null)
@@ -313,32 +313,19 @@ namespace AutoDevOpsAI.DevOps
 
             var resumoErro = string.Join("\n\n", mensagensErro);
 
-
-            // var falhas = timeline.Records
-            //     .Where(r => r.Result == TaskResult.Failed)
-            //     .Select(r => $"{r.Name} (LogId: {r.Log?.Id})")
-            //     .ToList();
-
-            // foreach (var erro in falhas)
-            // {
-            //     _logger.LogError($"Erro na build: {erro}");
-            // }
-
-            // var resumoErro = string.Join("\n", falhas);
-
             if (tentativaAtual >= MaxTentativasCorrecao)
             {
-                _logger.LogError($"❌ Número máximo de tentativas de correção atingido para #{historiaId}. Encerrando.");
+                _logger.LogError($"Número máximo de tentativas de correção atingido para #{historiaId}. Encerrando.");
 
                 // (Opcional) Notifica a história de usuário com a falha
                 await AtualizarHistoriaComErro(historiaId, resumoErro);
                 return false;
             }
 
-            _logger.LogInformation("Solicitando correção à IA...");
+            _logger.LogInformation(">> Anaisando as falhas da build e aplicando correções... <<");
             var arquivosCorrigidos = await _agentService.CorrigirFalhaBuildAsync(historiaId, arquivos, resumoErro);
 
-            _logger.LogInformation("Nova tentativa de push com arquivos corrigidos...");
+            _logger.LogInformation(">> Nova tentativa de push com arquivos corrigidos... <<");
             return await ValidarBuildAntesDaPRAsync(
                 repoName,
                 branchName,
@@ -361,13 +348,13 @@ namespace AutoDevOpsAI.DevOps
 
                 if (targetRef == null)
                 {
-                    _logger.LogError($"❌ Branch '{branchName}' não encontrada. Push cancelado.");
+                    _logger.LogError($"Branch '{branchName}' não encontrada. Push cancelado.");
                     return false;
                 }
 
                 if(arquivos == null || !arquivos.Any())
                 {
-                    _logger.LogWarning($"⚠️ Nenhum arquivo para enviar na branch '{branchName}'. Push cancelado.");
+                    _logger.LogWarning($"Nenhum arquivo para enviar na branch '{branchName}'. Push cancelado.");
                     return true; 
                 }
 
@@ -375,7 +362,7 @@ namespace AutoDevOpsAI.DevOps
 
                 if (string.IsNullOrEmpty(latestCommitId))
                 {
-                    _logger.LogError($"❌ Commit ID inválido para a branch '{branchName}'.");
+                    _logger.LogError($"Commit ID inválido para a branch '{branchName}'.");
                     return false;
                 }
 
@@ -398,11 +385,11 @@ namespace AutoDevOpsAI.DevOps
                             }
                         );
                         existe = item != null;
-                        _logger.LogInformation($"Arquivo '{arquivo.FilePath}' já existe no repositório e será alterado");
                     }
                     catch
                     {
-                        _logger.LogInformation($"Arquivo '{arquivo.FilePath}' não encontrado no repositório, será criado");
+                        // ignora erro se o arquivo não existir
+                        existe = false;
                     }
 
                     changes.Add(new GitChange
@@ -436,22 +423,22 @@ namespace AutoDevOpsAI.DevOps
                     Commits = new List<GitCommitRef> { newCommit }
                 };
 
-                _logger.LogInformation($"🔄 Enviando push para '{branchName}' com {arquivos.Count} arquivos...");
+                _logger.LogInformation($"Enviando push para '{branchName}' com {arquivos.Count} arquivos...");
 
                 await _gitClient.CreatePushAsync(push, repo.Id);
 
-                _logger.LogInformation($"✅ Push realizado com sucesso para '{branchName}'.");
+                _logger.LogInformation($">> Push realizado com sucesso para '{branchName}'. <<");
 
                 return true;
             }
             catch (VssServiceException ex) when (ex.Message.Contains("TF401028"))
             {
-                _logger.LogWarning("⚠️ Conflito de concorrência no push para '{branchName}': {erro}", branchName, ex.Message);
+                _logger.LogWarning("Conflito de concorrência no push para '{branchName}': {erro}", branchName, ex.Message);
                 return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"❌ Erro inesperado ao realizar push para '{branchName}'");
+                _logger.LogError(ex, $"Erro inesperado ao realizar push para '{branchName}'");
                 return false;
             }
         }
@@ -473,7 +460,7 @@ namespace AutoDevOpsAI.DevOps
             {
                 var comentario = new CommentCreate()
                 {
-                    Text = $"⚠️ A automação tentou processar a história #{historiaId}, mas a build falhou mesmo após várias tentativas.\n\n**Resumo do erro:**\n{mensagemErro}"
+                    Text = $"A automação tentou processar a história #{historiaId}, mas a build falhou mesmo após várias tentativas.\n\n**Resumo do erro:**\n{mensagemErro}"
                 };
 
                 await _witClient.AddCommentAsync(comentario, _projectName, historiaId);

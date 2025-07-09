@@ -45,7 +45,7 @@ namespace AutoDevOpsAI.Worker
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation($"Buscando histórias de usuário ");
+                _logger.LogInformation($">>  Buscando histórias de usuário  <<");
                 var historias = await _devOpsClient.GetUserStoriesWithTagAsync("autocode");
 
                 foreach (var historia in historias)
@@ -54,7 +54,7 @@ namespace AutoDevOpsAI.Worker
                     var htmlDescricao = historia.Fields["System.Description"]?.ToString() ?? titulo;
                     var descricao = ExtrairTextoLimpo(htmlDescricao);
 
-                    _logger.LogInformation($"Processando história #{historia.Id}: {titulo}");
+                    _logger.LogInformation($">> Processando história #{historia.Id}: {titulo} <<");
 
                     var repoName = ExtrairRepoHtml(htmlDescricao);
 
@@ -92,11 +92,11 @@ namespace AutoDevOpsAI.Worker
                     // 3. Criar nova branch
                     if (!branchExists)
                     {
-                        _logger.LogInformation("Criando nova branch: {branchName}", branchName);
+                        _logger.LogInformation(">> Criando nova branch: {branchName} <<", branchName);
                         await _devOpsClient.CreateBranchAsync(repoName, "main", branchName);
                     }
                     else
-                        _logger.LogInformation("Branch já existe: {branchName}", branchName);
+                        _logger.LogInformation(">> Branch já existe: {branchName} <<", branchName);
 
 
                     // 5. Rodar build e validar antes do PR
@@ -110,7 +110,7 @@ namespace AutoDevOpsAI.Worker
 
                     if (!buildOk)
                     {
-                        _logger.LogWarning("Build falhou para a história #{id}. PR não será criada.", historia.Id);
+                        _logger.LogWarning(">> Build falhou para a história #{id}. PR não será criada. <<", historia.Id);
                         continue;
                     }
 
@@ -125,7 +125,7 @@ namespace AutoDevOpsAI.Worker
 
                     await _devOpsClient.AtualizarHistoriaComoProcessada(historia.Id ?? 0, pr.Url);
 
-                    _logger.LogInformation("História #{id} concluída com sucesso.", historia.Id);
+                    _logger.LogInformation(">> História #{id} concluída com sucesso. <<", historia.Id);
                 }
 
 
@@ -145,7 +145,6 @@ namespace AutoDevOpsAI.Worker
             foreach (var div in doc.DocumentNode.SelectNodes("//div"))
             {
                 var texto = HtmlEntity.DeEntitize(div.InnerText.Trim());
-                Console.WriteLine("Div: >>>" + texto + "<<<"); // debug opcional
 
                 if (texto.StartsWith("@repo:", StringComparison.OrdinalIgnoreCase))
                 {
