@@ -154,8 +154,8 @@ namespace AutoDevOpsAI.Agent
 
         public async Task<List<FileChange>> CorrigirFalhaBuildAsync(int historiaId, List<FileChange> arquivosAnteriores, string errosBuild, List<FileChange> arquivosAtuaisNaBranch)
         {
-            var arquivosTexto = string.Join("\n\n", arquivosAnteriores.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}"));
-            var arquivosAtuaisTexto = string.Join("\n\n", arquivosAtuaisNaBranch.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}"));
+            var arquivosTexto = string.Join("\n\n", arquivosAnteriores.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content} \nFIM do arquivo {a.FilePath}\n\n "));
+            var arquivosAtuaisTexto = string.Join("\n\n", arquivosAtuaisNaBranch.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}\nFIM do arquivo {a.FilePath}\n\n "));
 
             var prompt = $@"
                 Você é um engenheiro de software .NET responsável por manutenção e correção de aplicação .net 8. O último build de uma aplicação .net 8 falhou.
