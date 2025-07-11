@@ -21,7 +21,7 @@ namespace AutoDevOpsAI.DevOps
         private readonly string _projectName;
         private readonly ILogger<DevOpsClient> _logger;
         private readonly IAgentService _agentService;
-        private const int MaxTentativasCorrecao = 5;
+        private const int MaxTentativasCorrecao = 10;
 
 
 
@@ -193,7 +193,7 @@ namespace AutoDevOpsAI.DevOps
             return await _gitClient.CreatePullRequestAsync(pr, repo.Id);
         }
 
-        public async Task<List<string>> ListAllFilesAsync(string repoName, string branchName)
+        public async Task<List<FileChange>> ListAllFilesAsync(string repoName, string branchName)
         {
             var repo = await _gitClient.GetRepositoryAsync(_projectName, repoName);
 
@@ -212,7 +212,11 @@ namespace AutoDevOpsAI.DevOps
 
             return items
                 .Where(item => item.IsFolder == false)
-                .Select(item => item.Path)
+                .Select(item => new FileChange
+                {
+                    FilePath = item.Path,
+                    Content = item.Content ?? string.Empty // Garante que o conteúdo não seja nulo
+                })
                 .ToList();
         }
 
@@ -305,8 +309,8 @@ namespace AutoDevOpsAI.DevOps
             {
                 var logLines = await buildClient.GetBuildLogLinesAsync(_projectName, current.Id, falha.Log.Id);
                 var linhasRelevantes = logLines
-                    .Where(l => l.Contains("error", StringComparison.OrdinalIgnoreCase))
-                    .TakeLast(200); // pega as últimas 10 linhas com "error"
+                    .Where(l => l.Contains("error", StringComparison.OrdinalIgnoreCase) || l.Contains("Test Run Aborted", StringComparison.OrdinalIgnoreCase) || l.Contains("Failed", StringComparison.OrdinalIgnoreCase))
+                    .TakeLast(200);
 
                 mensagensErro.Add($"[{falha.Name}]\n{string.Join("\n", linhasRelevantes)}");
             }
@@ -322,8 +326,9 @@ namespace AutoDevOpsAI.DevOps
                 return false;
             }
 
+            var arquivosAtuaisNaBranch = await ListAllFilesAsync(repoName, branchName);
             _logger.LogInformation(">> Anaisando as falhas da build e aplicando correções... <<");
-            var arquivosCorrigidos = await _agentService.CorrigirFalhaBuildAsync(historiaId, arquivos, resumoErro);
+            var arquivosCorrigidos = await _agentService.CorrigirFalhaBuildAsync(historiaId, arquivos, resumoErro, arquivosAtuaisNaBranch);
 
             _logger.LogInformation(">> Nova tentativa de push com arquivos corrigidos... <<");
             return await ValidarBuildAntesDaPRAsync(
@@ -352,10 +357,10 @@ namespace AutoDevOpsAI.DevOps
                     return false;
                 }
 
-                if(arquivos == null || !arquivos.Any())
+                if (arquivos == null || !arquivos.Any())
                 {
                     _logger.LogWarning($"Nenhum arquivo para enviar na branch '{branchName}'. Push cancelado.");
-                    return true; 
+                    return true;
                 }
 
                 var latestCommitId = targetRef.ObjectId;

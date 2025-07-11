@@ -1,5 +1,3 @@
-with open("/mnt/data/README.md", "w", encoding="utf-8") as f:
-    f.write("""# AutoDevOpsAI
 
 ## 🚀 Visão Geral
 
@@ -46,6 +44,7 @@ A aplicação permite que histórias de usuário criadas no Azure Boards sejam a
     AutoDevOpsAI.Core/ # Contratos, modelos, utilitários
     AutoDevOpsAI.Api/ # (Opcional) API para orquestração manual
 
+---
 
 ## ⚙️ Pré-requisitos
 
@@ -56,6 +55,7 @@ A aplicação permite que histórias de usuário criadas no Azure Boards sejam a
 - Conta no **Render.com** (ou outra plataforma de publicação)
 - .NET 8 SDK (para desenvolvimento local)
 
+---
 
 ## 🚦 Como Funciona (Visão Geral do Fluxo)
 
@@ -67,7 +67,7 @@ A aplicação permite que histórias de usuário criadas no Azure Boards sejam a
 6. **Build OK?** É aberta uma Pull Request automaticamente.
 7. **Deploy Automatizado**: Imagem Docker é publicada no Docker Hub e, via Render.com, a aplicação é disponibilizada online.
 
-
+---
 
 ## 🛠️ Como Rodar Localmente
 
@@ -97,6 +97,7 @@ No diretório src/AutoDevOpsAI.Worker, crie um arquivo appsettings.Development.j
  cd src/AutoDevOpsAI.Worker
 dotnet run
  ```
+---
 
  ## 💡 Exemplo de História de Usuário
  Como usuário, quero receber um e-mail de confirmação após me cadastrar,
@@ -114,7 +115,7 @@ Critérios de aceite:
 
 @repo: MinhaApiBackend
 
-
+---
 
  ## 🐳  CI/CD com Docker e Publicação Automática
 
@@ -127,6 +128,8 @@ Exemplo de build local:
 docker build -t lbelof/minhaapibackend:latest .
 docker run -p 8080:80 lbelof/minhaapibackend:latest
 
+---
+
  ## 🚧  Observações Importantes
 
 - **Prompt Engineering:**
@@ -137,6 +140,8 @@ docker run -p 8080:80 lbelof/minhaapibackend:latest
 
 - **Limites:**
   Uso intensivo da OpenAI pode gerar custos. Para ambientes de produção, avalie limites de requisição e custo.
+
+---
 
 ## 🤝 Contribuição
 

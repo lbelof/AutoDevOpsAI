@@ -4,8 +4,16 @@ using AutoDevOpsAI.Agent;
 using AutoDevOpsAI.DevOps;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Services.AddHostedService<Worker>();
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.IncludeScopes = false;
+    options.SingleLine = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+});
 
+
+builder.Services.AddHostedService<Worker>();
 builder.Services.AddHttpClient<IAgentService, AgentService>();
 builder.Services.AddSingleton<IAgentService, AgentService>();
 

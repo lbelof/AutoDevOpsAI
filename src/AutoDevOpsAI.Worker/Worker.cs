@@ -81,7 +81,12 @@ namespace AutoDevOpsAI.Worker
                     var estruturaArquivos = await _devOpsClient.ListAllFilesAsync(repoName, branchExists ? branchName : "main");
 
                     // 2. Pedir sugestão de alterações à IA
-                    var arquivosGerados = await _agentService.ProporAlteracoesAsync(descricao, estruturaArquivos);
+                    var projetoExiste = estruturaArquivos.Select(a => a.FilePath).Any(x =>
+                        x.EndsWith(".sln") || x.EndsWith(".csproj") || x.EndsWith("Program.cs")
+                    );
+
+                    // 3. Chama a IA para propor alterações
+                    var arquivosGerados = await _agentService.ProporAlteracoesAsync(descricao, estruturaArquivos, projetoExiste);
 
                     if (!arquivosGerados.Any())
                     {
@@ -89,7 +94,7 @@ namespace AutoDevOpsAI.Worker
                         continue;
                     }
 
-                    // 3. Criar nova branch
+                    // 4. Criar nova branch
                     if (!branchExists)
                     {
                         _logger.LogInformation(">> Criando nova branch: {branchName} <<", branchName);
@@ -126,6 +131,12 @@ namespace AutoDevOpsAI.Worker
                     await _devOpsClient.AtualizarHistoriaComoProcessada(historia.Id ?? 0, pr.Url);
 
                     _logger.LogInformation(">> História #{id} concluída com sucesso. <<", historia.Id);
+                    _logger.LogInformation("==========================================");
+                    _logger.LogInformation("==========================================");
+                    _logger.LogInformation($"Sua API está disponível para TESTE em: https://autodevopsai-latest.onrender.com/swagger/index.html");
+                    _logger.LogInformation("==========================================");
+                    _logger.LogInformation("==========================================");
+
                 }
 
 
