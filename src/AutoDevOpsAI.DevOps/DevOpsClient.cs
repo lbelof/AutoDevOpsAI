@@ -193,7 +193,8 @@ namespace AutoDevOpsAI.DevOps
             return await _gitClient.CreatePullRequestAsync(pr, repo.Id);
         }
 
-        public async Task<List<FileChange>> ListAllFilesAsync(string repoName, string branchName)
+
+        public async Task<List<FileChange>> ListAllFilesWithContentAsync(string repoName, string branchName)
         {
             var repo = await _gitClient.GetRepositoryAsync(_projectName, repoName);
 
@@ -210,14 +211,35 @@ namespace AutoDevOpsAI.DevOps
                 }
             );
 
-            return items
-                .Where(item => item.IsFolder == false)
-                .Select(item => new FileChange
+            var arquivos = new List<FileChange>();
+
+            foreach (var item in items.Where(x => x.IsFolder == false))
+            {
+                
+                string content = "";
+                using (var stream = await _gitClient.GetItemContentAsync(
+                    repo.Id,
+                    path: item.Path,
+                    versionDescriptor: new GitVersionDescriptor
+                    {
+                        Version = branchName,
+                        VersionType = GitVersionType.Branch
+                    }))
+                {
+                    using (var reader = new StreamReader(stream))
+                    {
+                        content = await reader.ReadToEndAsync();
+                    }
+                }
+
+                arquivos.Add(new FileChange
                 {
                     FilePath = item.Path,
-                    Content = item.Content ?? string.Empty // Garante que o conteúdo não seja nulo
-                })
-                .ToList();
+                    Content = content
+                });
+            }
+
+            return arquivos;
         }
 
 
@@ -278,7 +300,7 @@ namespace AutoDevOpsAI.DevOps
             Build current;
             do
             {
-                await Task.Delay(TimeSpan.FromSeconds(10));
+                await Task.Delay(TimeSpan.FromSeconds(3));
                 current = await buildClient.GetBuildAsync(_projectName, buildResult.Id);
             }
             while (current.Status != BuildStatus.Completed);
@@ -308,11 +330,31 @@ namespace AutoDevOpsAI.DevOps
             foreach (var falha in falhas)
             {
                 var logLines = await buildClient.GetBuildLogLinesAsync(_projectName, current.Id, falha.Log.Id);
-                var linhasRelevantes = logLines
-                    .Where(l => l.Contains("error", StringComparison.OrdinalIgnoreCase) || l.Contains("Test Run Aborted", StringComparison.OrdinalIgnoreCase) || l.Contains("Failed", StringComparison.OrdinalIgnoreCase))
-                    .TakeLast(200);
 
-                mensagensErro.Add($"[{falha.Name}]\n{string.Join("\n", linhasRelevantes)}");
+                var linhasRelevantes = new HashSet<int>();
+
+                // Procura as linhas relevantes e registra o índice delas
+                for (int i = 0; i < logLines.Count; i++)
+                {
+                    if (logLines[i].Contains("error", StringComparison.OrdinalIgnoreCase)
+                        || logLines[i].Contains("Test Run Aborted", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Adiciona o range de 5 linhas antes e 5 depois (inclui a própria)
+                        int inicio = Math.Max(0, i - 5);
+                        int fim = Math.Min(logLines.Count - 1, i + 5);
+
+                        for (int j = inicio; j <= fim; j++)
+                            linhasRelevantes.Add(j);
+                    }
+                }
+
+                // Ordena os índices e pega as linhas
+                var trechoComContexto = linhasRelevantes
+                    .OrderBy(idx => idx)
+                    .Select(idx => logLines[idx])
+                    .ToList();
+
+                mensagensErro.Add($"[{falha.Name}]\n{string.Join("\n", trechoComContexto)}");
             }
 
             var resumoErro = string.Join("\n\n", mensagensErro);
@@ -326,9 +368,15 @@ namespace AutoDevOpsAI.DevOps
                 return false;
             }
 
-            var arquivosAtuaisNaBranch = await ListAllFilesAsync(repoName, branchName);
+            var arquivosAtuaisNaBranch = await ListAllFilesWithContentAsync(repoName, branchName);
             _logger.LogInformation(">> Anaisando as falhas da build e aplicando correções... <<");
             var arquivosCorrigidos = await _agentService.CorrigirFalhaBuildAsync(historiaId, arquivos, resumoErro, arquivosAtuaisNaBranch);
+            if (!arquivosCorrigidos.Any())
+            {
+                _logger.LogInformation("Não foram encontradas correções aplicáveis. É melhor um dev humano revisar isso aqui.");
+                return false;
+            }
+
 
             _logger.LogInformation(">> Nova tentativa de push com arquivos corrigidos... <<");
             return await ValidarBuildAntesDaPRAsync(

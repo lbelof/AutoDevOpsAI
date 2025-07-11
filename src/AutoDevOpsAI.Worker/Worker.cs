@@ -78,7 +78,7 @@ namespace AutoDevOpsAI.Worker
                     var branchExists = await _devOpsClient.VerificarBranchExistenteAsync(repoName, branchName);
 
                     // 1. Obter estrutura do repositório
-                    var estruturaArquivos = await _devOpsClient.ListAllFilesAsync(repoName, branchExists ? branchName : "main");
+                    var estruturaArquivos = await _devOpsClient.ListAllFilesWithContentAsync(repoName, branchExists ? branchName : "main");
 
                     // 2. Pedir sugestão de alterações à IA
                     var projetoExiste = estruturaArquivos.Select(a => a.FilePath).Any(x =>

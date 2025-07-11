@@ -27,7 +27,7 @@ namespace AutoDevOpsAI.Agent
 
             if (projetoExiste)
             {
-                _logger.LogInformation("Propondo alterações no...");
+                _logger.LogInformation("Propondo alterações no código ...");
                 prompt = PromptFuncionalidade(historiaUsuario, estruturaArquivos);
             }
             else
@@ -94,8 +94,9 @@ namespace AutoDevOpsAI.Agent
                 6. Garanta que todos os 'using'(referencias) necessários necessários em cada classe  estejam presentes nas respectivas classes.
                 7. Evite comentários ou blocos de código inúteis. Inclua apenas o código mínimo necessário, sem métodos vazios, nem exemplos genéricos.
                 8. Só utilize pacotes NuGet que sejam compatíveis com .NET 8 
-                9. Crie a solution (.sln) na raiz do repositório devidamente referenciando todos os projetos criados.
-                10. O projeto de teste deve estar funcional e referenciar corretamente os demais projetos, com testes básicos de integração para a API.
+                9. Crie a solution (.sln) na raiz do repositório devidamente preenchida, referenciando todos os projetos criados . 
+                10. O projeto de teste deve estar funcional e referenciar corretamente os demais projetos, com testes básicos de integração para a API
+                11. Utilize a lib Microsoft.NET.Test.Sdk no projeot de testes, e garanta que os testes sejam executados corretamente.
 
                 Todos os nomes devem seguir a convenção de nomenclatura C# (PascalCase/CamelCase) e a indentação deve usar 4 espaços por nível.
                 Importante: Abaixo há uma história de usuário que deve ser implementada após a criação da estrutura base. Utilize a história de usuário para definir a linguagem ubíqua e o domínio dessa API.
@@ -116,10 +117,11 @@ namespace AutoDevOpsAI.Agent
 
         private string PromptFuncionalidade(string historiaUsuario, List<FileChange> estrutura)
         {
-            var estruturaTexto = string.Join("\n", estrutura.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}"));
+            var estruturaTexto = string.Join("\n", estrutura.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}\nFIM do arquivo {a.FilePath}\n\n "));
 
             return $@"
-                Você é um engenheiro de software .NET.
+                Você é um engenheiro de software .NET especialista e recebeu uma demanda para alterar um sistema já em uso. Abaixo estão alguns dados importantes
+                dos arquivos que já estão no repositorio e instruções de como você deve proceder.  
 
                 Abaixo está a estrutura atual do projeto:
                 {estruturaTexto}
@@ -149,22 +151,17 @@ namespace AutoDevOpsAI.Agent
                 ""{historiaUsuario}""
                 ";
         }
-
-
-
         public async Task<List<FileChange>> CorrigirFalhaBuildAsync(int historiaId, List<FileChange> arquivosAnteriores, string errosBuild, List<FileChange> arquivosAtuaisNaBranch)
         {
             var arquivosTexto = string.Join("\n\n", arquivosAnteriores.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content} \nFIM do arquivo {a.FilePath}\n\n "));
             var arquivosAtuaisTexto = string.Join("\n\n", arquivosAtuaisNaBranch.Select(a => $"Arquivo: {a.FilePath}\n Conteúdo do arquivo:{a.Content}\nFIM do arquivo {a.FilePath}\n\n "));
 
             var prompt = $@"
-                Você é um engenheiro de software .NET responsável por manutenção e correção de aplicação .net 8. O último build de uma aplicação .net 8 falhou.
+                Você é um engenheiro de software .NET responsável por manutenção e correção de aplicação .net 8. O último build de uma aplicação .net 8 falhou. Abaixo estão alguns dados importantes do buil que falho na execução da pipeline,
+                dos arquivos que compoem o commit que está rodando no build e instruções de como você deve proceder. 
 
                 ERRO DA BUILD DA APLICAÇÃO(LOG):
                 {errosBuild}
-
-                ARQUIVOS MODIFICADOS NO ÚLTIMO COMMIT:
-                {arquivosTexto}
 
                 ARQUIVOS ATUAIS NA BRANCH:
                 {arquivosAtuaisTexto}
@@ -173,15 +170,14 @@ namespace AutoDevOpsAI.Agent
                 - Respeite a arquitetura de pastas do projeto existente. As pastas mostradas no LOG podem não condizer com a estrutura real do projeto, pois fazem parte do build do Azure DevOps. 
                 - Corrija apenas o(s) erro(s) presente(s) no log acima.
                 
+                - Ao alterar um arquivo, faça um MERGE das suas alterações com o conteúdo atual do arquivo(que se encontra nesse prompt), assim como funciona no GIT.
                 - A primeira coisa a verificar é a necessidade de adicionar  'using' nas classes citadas nos erros do log. 
                 - Apenas corrija os erros de forma eficiente, sem adicionar código desnecessário ou alterar a lógica existente.
                 - Evite criar arquivos novos, nem apague arquivos existentes, exceto se o erro explicitamente pedir por isso.
                 - Se a correção anterior não funcionou, avalie desfaze-la e tentar outra abordagem.
-                - Verifique se todos os 'using' necessários em cada classe estejam presentes nas classes onde deveriam. Se não estiverem, adicione-os.
-                - Verifique se o erro é no projeto de testes, e se for, corrija o teste para que ele funcione corretamente com a lógica atual do código. Se for uma falha na execução do teste verifique se o método testad não foi corrompido com as alterações feitas.
+                - O projeto de testes pode apresentar erros como 'Test Run Aborted'. Nesse caso, avalie os logs do build e identifique o que é preciso corrigir no projeto de testes.
                 - Crie testes unitários em caso de novas funcionalidades ou correções que não tenham testes existentes.
-                - Ao alterar um arquivo, faça um MERGE das suas alterações com o conteúdo atual do arquivo(que se encontra acima), mantendo o que já estava implementado e adicionando seu ajuste.
-                
+
 
                 - Para cada erro, explique em até 3 linhas o que estava errado e a alteração realizada, ANTES do JSON.
                 - Exemplo de explicação: “Corrigi o namespace da classe UserService, pois estava incorreto.” 
